@@ -1962,8 +1962,14 @@ function ListenerForm({
           row.group === group && row.category === adminPreviewFilters.category,
       ),
   );
-  const previewYears = [
-    ...new Set([selectedYear, ...rows.map((row) => row.year)]),
+  const yearOptions = [
+    ...new Set([
+      selectedYear,
+      ...rows.map((row) => row.year),
+      ...Array.from({ length: 8 }, (_, index) =>
+        String(new Date().getFullYear() - 3 + index),
+      ),
+    ]),
   ]
     .filter((year) => /^\d{4}$/.test(year))
     .sort()
@@ -1978,7 +1984,9 @@ function ListenerForm({
   } | null>(null);
   const [previewOwnerListenerId, setPreviewOwnerListenerId] =
     useState(ownerListenerId);
-  const [cardsOnly, setCardsOnly] = useState(false);
+  // Head admins arrive to the cohort browser first. Data entry is an explicit
+  // action, so the protected form never looks like a required registration.
+  const [cardsOnly, setCardsOnly] = useState(isAdminForm);
   const [photoPreview, setPhotoPreview] = useState(
     initialEditingRecord?.photo || '',
   );
@@ -2247,6 +2255,25 @@ function ListenerForm({
     );
   }
 
+  function beginAdminEntry() {
+    setNewPeriodRegistration(false);
+    setEditingRecord(null);
+    setSelectedRecord(null);
+    setSelectedGroup('');
+    setSelectedStartDate('');
+    setSelectedYear(String(new Date().getFullYear()));
+    setSelectedCategory('Nomzod direktor');
+    setSelectedRegion('');
+    setSelectedDistrict('');
+    setPhoneDigits('');
+    setPhotoPreview('');
+    setGroupPreviewOpen(false);
+    setCardsOnly(false);
+    setSubmitted(false);
+    setError('');
+    setLookupError('');
+  }
+
   function openRecordCard(row: ListenerRecord) {
     if (!canManagePreviewCards) return;
     setSelectedRecord(row);
@@ -2308,6 +2335,15 @@ function ListenerForm({
 
   function cancelEditing() {
     setNewPeriodRegistration(false);
+    if (isAdminForm) {
+      setEditingRecord(null);
+      setCardsOnly(true);
+      setGroupPreviewOpen(Boolean(previewCohort));
+      setSubmitted(false);
+      setError('');
+      setLookupError('');
+      return;
+    }
     if (boundListener || confirmedCohort) {
       if (previewCohort) {
         setSelectedGroup(previewCohort.group);
@@ -2510,19 +2546,27 @@ function ListenerForm({
                 <p>
                   {editingRecord
                     ? 'TINGLOVCHI · TAHRIRLASH'
-                    : 'TINGLOVCHI · 2026'}
+                    : isAdminForm && cardsOnly
+                      ? 'BOSHQARUV · GURUHLARNI KO‘RISH'
+                      : 'TINGLOVCHI · 2026'}
                 </p>
                 <h3>
                   {editingRecord
                     ? 'Ma’lumotni tahrirlash'
-                    : 'Ro‘yxatdan o‘tkazish'}
+                    : isAdminForm && cardsOnly
+                      ? 'Guruhlar bo‘yicha boshqaruv'
+                      : 'Ro‘yxatdan o‘tkazish'}
                 </h3>
               </div>
             </div>
             <button
               type="button"
               aria-label="Yopish"
-              onClick={editingRecord ? cancelEditing : onCancel}
+              onClick={
+                editingRecord || (isAdminForm && !cardsOnly)
+                  ? cancelEditing
+                  : onCancel
+              }
             >
               ×
             </button>
@@ -2546,7 +2590,7 @@ function ListenerForm({
                       }}
                     >
                       <option value="">Barcha yillar</option>
-                      {previewYears.map((year) => (
+                      {yearOptions.map((year) => (
                         <option key={year}>{year}</option>
                       ))}
                     </select>
@@ -2674,6 +2718,16 @@ function ListenerForm({
                     ? '↻ Ko‘rish'
                     : '👁 Ko‘rish'}
               </button>
+              {isAdminForm && (
+                <button
+                  type="button"
+                  className="admin-entry-button"
+                  disabled={saving || lookingUpGroup}
+                  onClick={beginAdminEntry}
+                >
+                  ＋ Kiritish
+                </button>
+              )}
             </div>
             {canViewAnyGroup ? (
               <small className="form-lookup-help">
@@ -2715,12 +2769,22 @@ function ListenerForm({
           </div>
         </header>
         <div className="ting-form-body">
-          {cardsOnly && (
+          {cardsOnly && groupPreviewOpen && (
             <div className="cards-only-success">
               {submitted
                 ? '✓ Tinglovchi ro‘yxatga kiritildi. Guruh kartochkasi ochildi.'
                 : '👥 Guruh kartochkasi ochildi.'}
             </div>
+          )}
+          {isAdminForm && cardsOnly && !groupPreviewOpen && (
+            <section className="admin-form-ready" aria-live="polite">
+              <span>KO‘RISH REJIMI</span>
+              <b>Avval yil, oy, kategoriya va guruhni tanlang.</b>
+              <small>
+                Keyin «Ko‘rish»ni bosing. Yangi ma’lumot kiritish faqat «＋
+                Kiritish» orqali ochiladi.
+              </small>
+            </section>
           )}
           {!isAdminForm && cardsOnly && confirmedCohort && (
             <div className="mtv-new-period">
@@ -2755,12 +2819,12 @@ function ListenerForm({
                   <button
                     type="button"
                     onClick={() => {
-                      setCardsOnly(false);
                       setSubmitted(false);
                       setGroupPreviewOpen(false);
+                      if (!isAdminForm) setCardsOnly(false);
                     }}
                   >
-                    ← Formaga qaytish
+                    {isAdminForm ? '← Filtrlarga qaytish' : '← Formaga qaytish'}
                   </button>
                 ) : (
                   <button
@@ -3067,12 +3131,34 @@ function ListenerForm({
                 </label>
                 <label>
                   <span>Yil</span>
-                  <input
-                    name="year"
-                    value={selectedYear}
-                    readOnly
-                    maxLength={4}
-                  />
+                  {isAdminForm ? (
+                    <select
+                      name="year"
+                      aria-label="Ro‘yxatga kiritish uchun yil"
+                      value={selectedYear}
+                      onChange={(event) => {
+                        const year = event.target.value;
+                        setSelectedYear(year);
+                        if (selectedStartDate) {
+                          setSelectedStartDate(
+                            `${year}${selectedStartDate.slice(4)}`,
+                          );
+                        }
+                        setGroupPreviewOpen(false);
+                      }}
+                    >
+                      {yearOptions.map((year) => (
+                        <option key={year}>{year}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      name="year"
+                      value={selectedYear}
+                      readOnly
+                      maxLength={4}
+                    />
+                  )}
                 </label>
                 <label>
                   <span>Kategoriya *</span>
@@ -3366,7 +3452,9 @@ function ListenerForm({
             type="button"
             disabled={saving}
             onClick={
-              editingRecord || newPeriodRegistration ? cancelEditing : onCancel
+              editingRecord || newPeriodRegistration || isAdminForm
+                ? cancelEditing
+                : onCancel
             }
           >
             {editingRecord ? 'TAHRIRNI BEKOR QILISH' : 'Bekor qilish'}

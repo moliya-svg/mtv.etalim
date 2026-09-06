@@ -565,6 +565,15 @@ button {
 .form-lookup-bar button:hover {
   background: rgba(255, 255, 255, 0.3);
 }
+.form-lookup-bar .admin-entry-button {
+  border-color: #dcfce7;
+  background: #fff;
+  color: #166534;
+  box-shadow: 0 5px 16px rgba(4, 96, 42, 0.15);
+}
+.form-lookup-bar .admin-entry-button:hover {
+  background: #f0fdf4;
+}
 .form-telegram-invite {
   display: flex;
   align-items: center;
@@ -1501,6 +1510,44 @@ button {
   font-size: 10px;
   font-weight: 900;
   letter-spacing: 0.02em;
+}
+.admin-form-ready {
+  display: grid;
+  gap: 6px;
+  min-height: 168px;
+  align-content: center;
+  justify-items: center;
+  border: 1px solid #c7e8d1;
+  border-radius: 16px;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(236, 253, 245, 0.95),
+      rgba(255, 255, 255, 0.96)
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0 31px,
+      rgba(22, 130, 76, 0.04) 31px 32px
+    );
+  padding: 24px;
+  text-align: center;
+}
+.admin-form-ready > span {
+  color: #16824c;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+.admin-form-ready > b {
+  color: #1c4a2d;
+  font-size: 16px;
+}
+.admin-form-ready > small {
+  max-width: 440px;
+  color: #668171;
+  font-size: 11px;
+  line-height: 1.5;
 }
 .cards-only-view .ting-form-body {
   min-height: 330px;

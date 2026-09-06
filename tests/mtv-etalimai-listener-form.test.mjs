@@ -295,6 +295,43 @@ test('ordinary form has no browse filters; admin has year/month above category/g
   assert.ok(admin.find((node) => node.props?.href === '/?section=form').length);
 });
 
+test('admin form starts in browse mode and makes year selection explicit', async () => {
+  const admin = setup({
+    isAdminForm: true,
+    canViewAnyGroup: true,
+    canSelectAnyGroup: true,
+    canEdit: true,
+  });
+  assert.equal(cardsHidden(admin), true);
+  assert.ok(textOf(admin.tree).includes('KO‘RISH REJIMI'));
+  assert.ok(textOf(admin.tree).includes('Yangi ma’lumot kiritish faqat'));
+
+  const currentYear = String(new Date().getFullYear());
+  const filterYear = filters(admin).find(
+    (node) => node.props['aria-label'] === 'Ko‘rish uchun yil',
+  );
+  assert.ok(textOf(filterYear).includes(currentYear));
+  assert.ok(textOf(filterYear).includes(String(Number(currentYear) - 1)));
+
+  await admin.click('＋ Kiritish');
+  assert.equal(cardsHidden(admin), false);
+  const entryYear = admin.find(
+    (node) => node.props?.['aria-label'] === 'Ro‘yxatga kiritish uchun yil',
+  )[0];
+  assert.ok(entryYear);
+  assert.ok(textOf(entryYear).includes(currentYear));
+  entryYear.props.onChange({
+    target: { value: String(Number(currentYear) - 1) },
+  });
+  admin.update({});
+  assert.equal(
+    admin.find(
+      (node) => node.props?.['aria-label'] === 'Ro‘yxatga kiritish uchun yil',
+    )[0].props.value,
+    String(Number(currentYear) - 1),
+  );
+});
+
 test('admin category narrows groups and all four filters reach the server', async () => {
   const otherGroup = 'Metodist (10-guruh)';
   const app = setup({
