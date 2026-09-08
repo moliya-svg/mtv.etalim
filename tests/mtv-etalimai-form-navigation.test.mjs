@@ -85,3 +85,7 @@ test('the existing protected admin route and distinct form heading are preserved
   assert.ok(page.includes("? 'Bosh admin formasi'"));
   assert.ok(page.includes('isAdminForm={adminEntry}'));
 });
+test('only the head-admin form renders the header close control', () => {
+  const page = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');
+  assert.match(page, /\{isAdminForm && \(\s*<button\s+type="button"\s+aria-label="Yopish"/);
+});

@@ -2559,17 +2559,17 @@ function ListenerForm({
                 </h3>
               </div>
             </div>
-            <button
-              type="button"
-              aria-label="Yopish"
-              onClick={
-                editingRecord || (isAdminForm && !cardsOnly)
-                  ? cancelEditing
-                  : onCancel
-              }
-            >
-              ×
-            </button>
+            {isAdminForm && (
+              <button
+                type="button"
+                aria-label="Yopish"
+                onClick={
+                  editingRecord || !cardsOnly ? cancelEditing : onCancel
+                }
+              >
+                ×
+              </button>
+            )}
           </div>
           <div className="form-public-tools">
             <div className="form-lookup-bar">
