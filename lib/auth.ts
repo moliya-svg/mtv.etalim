@@ -11,6 +11,7 @@ import {
 type AuthEnvironment = {
   ADMIN_ACCESS_PASSWORD?: string;
   AUTH_SESSION_SECRET?: string;
+  GOOGLE_CLIENT_ID?: string;
 };
 
 type AdminSessionPayload = {
@@ -37,11 +38,13 @@ type GroupViewSessionPayload = {
 type SessionPayload =
   | AdminSessionPayload
   | DeviceSessionPayload
-  | GroupViewSessionPayload;
+  | GroupViewSessionPayload
+  | { kind: 'google-login'; nonce: string; expiresAt: number };
 
 const adminCookieName = '__Host-mtv_etalimai_admin';
 const deviceCookieName = '__Host-mtv_etalimai_device';
 const groupViewCookieName = '__Host-mtv_etalimai_group_view';
+const googleNonceCookieName = '__Host-mtv_etalimai_google_nonce';
 const encoder = new TextEncoder();
 
 function authEnvironment() {
@@ -145,6 +148,41 @@ export async function adminFromCredentials(email: string, password: string) {
   // authenticate the two explicitly protected head-admin identities. Other
   // role records describe authorization, not verified identity.
   return protectedMember(normalizedEmail);
+}
+
+export function googleClientId() {
+  const value = authEnvironment().GOOGLE_CLIENT_ID?.trim() || '';
+  return /^[\w-]+\.apps\.googleusercontent\.com$/.test(value) ? value : '';
+}
+
+export async function googleLoginChallenge() {
+  const nonce = bytesToBase64Url(crypto.getRandomValues(new Uint8Array(32)));
+  const maxAge = 10 * 60;
+  const token = await signedToken({
+    kind: 'google-login',
+    nonce,
+    expiresAt: Date.now() + maxAge * 1000,
+  });
+  return {
+    nonce,
+    cookie: `${googleNonceCookieName}=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAge}`,
+  };
+}
+
+export async function googleLoginNonce(request: Request) {
+  const payload = await verifiedToken(
+    cookieValue(request, googleNonceCookieName),
+  );
+  return payload?.kind === 'google-login' ? payload.nonce : '';
+}
+
+export function clearGoogleLoginCookie() {
+  return `${googleNonceCookieName}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`;
+}
+
+// Call only with an email from a server-verified Google ID token.
+export function adminFromVerifiedGoogleEmail(email: string) {
+  return protectedMember(email.trim().toLowerCase());
 }
 
 export async function authenticatedAdmin(request: Request) {

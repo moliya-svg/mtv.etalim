@@ -5,6 +5,7 @@ import { formatAdminCohort } from '@/lib/listener-preview';
 import { listenerAudienceHeaders } from '@/lib/listener-audience';
 import { FormShareBar } from '@/components/form-share-bar';
 import { FormNavigation } from '@/components/form-navigation';
+import { GoogleAdminLogin } from '@/components/google-admin-login';
 import {
   useEffect,
   useMemo,
@@ -496,44 +497,55 @@ function AdminLogin({
             <span aria-hidden="true" /> Sessiya tekshirilmoqda…
           </output>
         ) : (
-          <form onSubmit={signIn}>
-            <label>
-              <span>Bosh admin e-maili</span>
-              <select
-                name="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                autoComplete="username"
-              >
-                {protectedAdminAccounts.map((admin) => (
-                  <option key={admin.email} value={admin.email}>
-                    {admin.email}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>Maxfiy parol</span>
-              <input
-                name="password"
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                autoComplete="current-password"
-                required
-                minLength={12}
-                placeholder="Maxfiy parolni kiriting"
-              />
-            </label>
-            {message && (
-              <div className="admin-login-error" role="alert">
-                ! {message}
-              </div>
-            )}
-            <button type="submit" disabled={submitting || password.length < 12}>
-              {submitting ? 'TEKSHIRILMOQDA…' : 'BOSH ADMIN SIFATIDA KIRISH'}
-            </button>
-          </form>
+          <>
+            <GoogleAdminLogin onAuthenticated={onAuthenticated} />
+            <details className="admin-password-fallback">
+              <summary>Maxfiy parol bilan kirish</summary>
+              <form onSubmit={signIn}>
+                <label>
+                  <span>Bosh admin e-maili</span>
+                  <select
+                    name="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    autoComplete="username"
+                  >
+                    {protectedAdminAccounts.map((admin) => (
+                      <option key={admin.email} value={admin.email}>
+                        {admin.email}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Maxfiy parol</span>
+                  <input
+                    name="password"
+                    type="password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    autoComplete="current-password"
+                    required
+                    minLength={12}
+                    placeholder="Maxfiy parolni kiriting"
+                  />
+                </label>
+                {message && (
+                  <div className="admin-login-error" role="alert">
+                    ! {message}
+                  </div>
+                )}
+                <button
+                  type="submit"
+                  disabled={submitting || password.length < 12}
+                >
+                  {submitting
+                    ? 'TEKSHIRILMOQDA…'
+                    : 'BOSH ADMIN SIFATIDA KIRISH'}
+                </button>
+              </form>
+            </details>
+          </>
         )}
         <Link href="/?section=form">
           ← Ommaviy tinglovchi formasiga qaytish

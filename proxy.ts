@@ -8,9 +8,10 @@ const contentSecurityPolicy = [
   "form-action 'self'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
-  "style-src 'self' 'unsafe-inline'",
-  "script-src 'self' 'unsafe-inline'",
-  "connect-src 'self'",
+  "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
+  "script-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/client",
+  "connect-src 'self' https://accounts.google.com/gsi/",
+  'frame-src https://accounts.google.com/gsi/',
   'upgrade-insecure-requests',
 ].join('; ');
 
@@ -30,7 +31,12 @@ export function proxy(request: NextRequest) {
 
   const response = NextResponse.next();
   response.headers.set('Content-Security-Policy', contentSecurityPolicy);
-  response.headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+  response.headers.set(
+    'Cross-Origin-Opener-Policy',
+    request.nextUrl.pathname.startsWith('/admin')
+      ? 'same-origin-allow-popups'
+      : 'same-origin',
+  );
   response.headers.set('Cross-Origin-Resource-Policy', 'same-origin');
   response.headers.set(
     'Permissions-Policy',
