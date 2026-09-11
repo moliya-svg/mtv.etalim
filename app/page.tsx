@@ -455,17 +455,16 @@ function AdminLogin({
     setSubmitting(true);
     setMessage('');
     try {
-      const response = await fetch('/api/admin/login', {
+      const result = await loadJson<{
+        authenticated?: boolean;
+        viewer?: AdminViewer;
+        error?: string;
+      }>('/api/admin/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
-      const result = (await response.json()) as {
-        authenticated?: boolean;
-        viewer?: AdminViewer;
-        error?: string;
-      };
-      if (!response.ok || !result.authenticated || !result.viewer) {
+      if (!result.authenticated || !result.viewer) {
         throw new Error(result.error || 'Bosh admin sifatida kirib bo‘lmadi.');
       }
       setPassword('');
@@ -935,7 +934,21 @@ export default function Home() {
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, [mobileMenuOpen]);
 
-  if (!routeReady || (adminEntry && !adminSessionChecked)) {
+  if (!routeReady) {
+    return (
+      <main className="admin-login-page" data-mtv-loading="page">
+        <section className="admin-login-card" aria-busy="true">
+          <p className="admin-login-kicker">MTV E-TA’LIM AI</p>
+          <h1>Sahifa yuklanmoqda…</h1>
+          <output className="admin-login-loading" aria-live="polite">
+            <span aria-hidden="true" /> Iltimos, biroz kuting.
+          </output>
+        </section>
+      </main>
+    );
+  }
+
+  if (adminEntry && !adminSessionChecked) {
     return <AdminLogin loading />;
   }
 
@@ -1885,6 +1898,14 @@ function ListenersPanel({
                     ? 'Yil, oy yoki boshqa filtrlarni o‘zgartiring.'
                     : 'Yangi ma’lumot kiritilgach, «Yangilash»ni bosing.'}
               </p>
+              {scope === 'anonymous' && (
+                <nav className="listener-empty-actions" aria-label="Ro‘yxatga kirish">
+                  <Link href="/admin?section=listeners">
+                    Bosh admin sifatida kirish →
+                  </Link>
+                  <Link href="/?section=form">Tinglovchi formasini ochish</Link>
+                </nav>
+              )}
             </div>
           )}
         </div>

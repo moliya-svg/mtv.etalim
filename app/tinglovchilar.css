@@ -51,6 +51,10 @@
 @media(max-width:900px){.listener-admin-links{grid-template-columns:1fr}.ting-hero-unified{grid-template-columns:1fr auto}.ting-hero-unified .ting-hero-ribbon{grid-column:1/-1;justify-self:start}.ting-hero-unified .ting-create{justify-self:end}}
 @media(max-width:600px){.ting-hero-unified{display:grid;min-height:0;padding:16px}.ting-hero-unified .ting-hero-title h2{font-size:23px}.ting-hero-unified .ting-create{position:relative;inset:auto;padding:10px 13px}.ting-hero-unified .ting-hero-ribbon{position:relative;inset:auto;margin:0}.listener-admin-links{padding-top:10px}.listener-quick-link{grid-template-columns:auto minmax(0,1fr)}.listener-link-actions{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,1fr)}.listener-quick-link:first-child .listener-link-actions,.listener-quick-link.editing .listener-link-actions{grid-template-columns:1fr 1fr}.listener-link-actions button,.listener-link-actions a{min-height:34px}.listener-quick-link.registration{grid-template-columns:1fr}.listener-registration-copy{min-height:36px}.listener-registration-open{padding-right:8px}}
 
+.listener-empty-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-top:18px}
+.listener-empty-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 16px;border:1px solid #0066cc;border-radius:10px;background:#0066cc;color:#fff;font-size:14px;font-weight:700;text-decoration:none}
+.listener-empty-actions a+a{background:#fff;color:#245d92;border-color:#b9cee4}
+.listener-empty-actions a:focus-visible{outline:3px solid #72b2f3;outline-offset:3px}
 /* Registration starts with a clear geographic and institutional path. */
 .ting-origin-section{position:relative;overflow:hidden;border-color:#c9dfd4;background:linear-gradient(135deg,#fff 0,#f3fbf7 100%)}
 .ting-origin-section:after{content:"UZ";position:absolute;right:14px;top:-34px;color:rgba(30,117,82,.045);font-size:105px;font-weight:950;letter-spacing:-.08em;pointer-events:none}

@@ -50,16 +50,20 @@ function nodes(tree) {
   return [tree, ...nodes(tree.props?.children)];
 }
 
-function harness(path = '/?section=listeners') {
+function harness(
+  path = '/?section=listeners',
+  { signedIn = true, deviceBound = true } = {},
+) {
   const state = [],
     requests = [],
     formRenders = [];
-  let authenticated = true,
+  let authenticated = signedIn,
     currentUrl = new URL(path, 'https://mtv.etalimai.uz');
   let cursor = 0,
     changed = false,
     effects = [],
-    tree;
+    tree,
+    firstRender;
   const location = {
     get pathname() {
       return currentUrl.pathname;
@@ -124,20 +128,31 @@ function harness(path = '/?section=listeners') {
       return Response.json({ ok: true });
     }
     if (url === '/api/device/session')
-      return Response.json({
-        bound: true,
-        listenerId: 'owner',
-        group: '56-guruh',
-      });
+      return Response.json(
+        deviceBound
+          ? {
+              bound: true,
+              listenerId: 'owner',
+              group: '56-guruh',
+            }
+          : { bound: false },
+      );
     if (url.startsWith('/api/state')) {
       const staff =
         authenticated &&
         new Headers(options.headers).get('x-mtv-audience') !== 'listener';
       return Response.json({
-        listeners: staff ? [owner, peer, privateRecord] : [owner, peer],
+        listeners: staff
+          ? [owner, peer, privateRecord]
+          : deviceBound
+            ? [owner, peer]
+            : [],
         roles: [],
         sources: { groups: ['56-guruh', '61-guruh'], districtsByRegion: {} },
-        scope: { kind: staff ? 'staff' : 'device', canViewAll: staff },
+        scope: {
+          kind: staff ? 'staff' : deviceBound ? 'device' : 'anonymous',
+          canViewAll: staff,
+        },
         pagination: { nextOffset: null },
       });
     }
@@ -185,6 +200,7 @@ function harness(path = '/?section=listeners') {
       changed = false;
       effects = [];
       tree = exports.default();
+      firstRender ??= tree;
       const form = nodes(tree).find(
         (node) => node.type?.name === 'ListenerForm',
       );
@@ -202,6 +218,23 @@ function harness(path = '/?section=listeners') {
   return {
     requests,
     formRenders,
+    get firstRender() {
+      return firstRender;
+    },
+    renderPanel() {
+      const panel = nodes(tree).find(
+        (node) => node.type?.name === 'ListenersPanel',
+      );
+      assert.ok(panel);
+      const previousCursor = cursor;
+      const previousEffects = effects;
+      cursor = state.length;
+      effects = [];
+      const panelTree = panel.type(panel.props);
+      cursor = previousCursor;
+      effects = previousEffects;
+      return panelTree;
+    },
     get url() {
       return currentUrl.href;
     },
@@ -298,4 +331,52 @@ test('editing from the regular dashboard enters the protected admin form', async
   assert.equal(form.props.isAdminForm, true);
   assert.equal(form.props.canEdit, true);
   assert.equal(form.props.initialEditingRecord.id, privateRecord.id);
+});
+
+for (const path of [
+  '/?section=form',
+  '/?section=listeners',
+  '/admin?section=form',
+]) {
+  test(`the first render of ${path} is neutral loading, not an admin password form`, async () => {
+    const app = harness(path, { signedIn: false, deviceBound: false });
+    assert.ok(
+      !nodes(app.firstRender).some((node) => node.type?.name === 'AdminLogin'),
+    );
+    assert.ok(
+      !nodes(app.firstRender).some((node) => node.props?.type === 'password'),
+    );
+    await app.settle();
+    if (path.startsWith('/admin')) {
+      assert.ok(app.component('AdminLogin'));
+      assert.equal(app.component('ListenersPanel'), undefined);
+      assert.equal(app.component('ListenerForm'), undefined);
+    } else {
+      assert.equal(app.component('AdminLogin'), undefined);
+    }
+  });
+}
+
+test('an anonymous empty roster explains access and offers both canonical actions without staff data', async () => {
+  const app = harness('/?section=listeners', {
+    signedIn: false,
+    deviceBound: false,
+  });
+  await app.settle();
+  const panel = app.component('ListenersPanel');
+  assert.equal(panel.props.scope, 'anonymous');
+  assert.equal(panel.props.rows.length, 0);
+  assert.equal(panel.props.canCreate, false);
+  assert.equal(panel.props.canEdit, false);
+  assert.equal(panel.props.canDelete, false);
+  const empty = nodes(app.renderPanel()).find(
+    (node) => node.props?.className === 'listener-empty',
+  );
+  assert.ok(empty);
+  const links = nodes(empty)
+    .filter((node) => node.props?.href)
+    .map((node) => new URL(node.props.href, 'https://mtv.etalimai.uz').href);
+  assert.ok(links.includes('https://mtv.etalimai.uz/admin?section=listeners'));
+  assert.ok(links.includes('https://mtv.etalimai.uz/?section=form'));
+  assert.ok(!JSON.stringify(empty).includes('private-other-group'));
 });
