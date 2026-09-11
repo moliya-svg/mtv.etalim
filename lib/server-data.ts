@@ -502,11 +502,12 @@ export function listenerFromDb(row: ListenerDbRow) {
 }
 
 export function publicListenerFromDb(row: ListenerDbRow) {
+  // Only used after the API has restricted rows to the verified member's
+  // exact cohort. Groupmates may see/call each other's full phone number;
+  // private documents, birth dates and notes remain hidden.
   const listener = listenerFromDb(row);
-  const phoneSuffix = row.phone_digits.replace(/\D/g, '').slice(-2);
   return {
     ...listener,
-    phone: phoneSuffix ? `+998 ** *** ** ${phoneSuffix}` : '+998 ** *** ** **',
     birthDate: '',
     note: '',
     orderFile: '',

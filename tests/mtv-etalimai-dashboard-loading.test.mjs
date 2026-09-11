@@ -7,6 +7,11 @@ import ts from 'typescript';
 import { formatAdminCohort } from '../lib/listener-preview.ts';
 import { listenerAudienceHeaders } from '../lib/listener-audience.ts';
 import { loadJson, loadListenerPages } from '../lib/listener-loading.ts';
+import {
+  listenerDbFixture,
+  listenerFromDb,
+  publicListenerFromDb,
+} from './helpers/mtv-etalimai-server-data.mjs';
 
 const compiled = ts.transpileModule(
   readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8'),
@@ -19,13 +24,18 @@ const compiled = ts.transpileModule(
   },
 ).outputText;
 const owner = {
+  ...listenerFromDb(
+    listenerDbFixture({ id: 'owner', phone_digits: '901111111' }),
+  ),
   id: 'owner',
   group: '56-guruh',
   year: '2026',
   category: 'Nomzod direktor',
   startDate: '2026-09-01',
 };
-const peer = { ...owner, id: 'peer', phone: '+998 ** *** ** 22' };
+const peer = publicListenerFromDb(
+  listenerDbFixture({ group_name: '56-guruh' }),
+);
 const privateRecord = {
   ...owner,
   id: 'private-other-group',
@@ -379,4 +389,22 @@ test('an anonymous empty roster explains access and offers both canonical action
   assert.ok(links.includes('https://mtv.etalimai.uz/admin?section=listeners'));
   assert.ok(links.includes('https://mtv.etalimai.uz/?section=form'));
   assert.ok(!JSON.stringify(empty).includes('private-other-group'));
+});
+
+test('the bound listener table displays the full groupmate phone without other-group access', async () => {
+  const app = harness('/?section=listeners', {
+    signedIn: false,
+    deviceBound: true,
+  });
+  await app.settle();
+  const panel = app.component('ListenersPanel');
+  assert.equal(panel.props.rows.length, 2);
+  assert.equal(panel.props.canEdit, false);
+  assert.ok(!panel.props.rows.some((row) => row.id === 'private-other-group'));
+  const link = nodes(app.renderPanel()).find(
+    (node) => node.type === 'a' && node.props?.children === peer.phone,
+  );
+  assert.ok(link);
+  assert.equal(peer.phone, '+998 90 222 22 22');
+  assert.equal(link.props.href.replace(/\s/g, ''), 'tel:+998902222222');
 });

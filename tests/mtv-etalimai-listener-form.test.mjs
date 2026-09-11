@@ -7,6 +7,10 @@ import ts from 'typescript';
 import { formatAdminCohort } from '../lib/listener-preview.ts';
 import { listenerAudienceHeaders } from '../lib/listener-audience.ts';
 import { loadListenerPages } from '../lib/listener-loading.ts';
+import {
+  listenerDbFixture,
+  publicListenerFromDb,
+} from './helpers/mtv-etalimai-server-data.mjs';
 
 // Execute the real form with deterministic hooks and mocked network responses.
 // No production database writes, browser cookies or external personal data.
@@ -39,7 +43,7 @@ const owner = {
   category: 'Nomzod direktor',
   status: 'Тўлдирилмаган',
 };
-const peer = { ...owner, id: 'peer', phone: '+998 ** *** ** 22' };
+const peer = publicListenerFromDb(listenerDbFixture());
 const cohort = { group, year: '2026', month: '09' };
 const responseFor = (listeners) =>
   Response.json({ found: true, cohort, listeners, ownerListenerId: 'owner' });
@@ -741,4 +745,22 @@ test('failed new-period save keeps the draft and leaves old cohort restorable', 
     ),
     /sentyabr/,
   );
+});
+
+test('Ko‘rish shows the groupmate full phone as a dialable link while private documents stay absent', () => {
+  const app = setup({
+    rows: [owner, peer],
+    lockedGroup: group,
+    ownerListenerId: owner.id,
+    deviceBindingVerified: true,
+  });
+  const link = app.find(
+    (node) => node.type === 'a' && node.props?.children === peer.phone,
+  )[0];
+  assert.ok(link);
+  assert.equal(peer.phone, '+998 90 222 22 22');
+  assert.equal(link.props.href, 'tel:+998902222222');
+  assert.equal(peer.orderFile, '');
+  assert.equal(peer.passportFront, '');
+  assert.equal(peer.passportBack, '');
 });
