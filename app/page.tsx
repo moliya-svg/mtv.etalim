@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { formatAdminCohort } from '@/lib/listener-preview';
 import { listenerAudienceHeaders } from '@/lib/listener-audience';
+import { loadJson, loadListenerPages } from '@/lib/listener-loading';
 import { FormShareBar } from '@/components/form-share-bar';
 import { FormNavigation } from '@/components/form-navigation';
 import { GoogleAdminLogin } from '@/components/google-admin-login';
@@ -578,6 +579,8 @@ export default function Home() {
   });
   const [serverLoading, setServerLoading] = useState(true);
   const [serverError, setServerError] = useState('');
+  const [reloadVersion, setReloadVersion] = useState(0);
+  const [listenerScope, setListenerScope] = useState('anonymous');
   const [adminEntry, setAdminEntry] = useState(false);
   const [routeReady, setRouteReady] = useState(false);
   const [adminViewer, setAdminViewer] = useState<AdminViewer | null>(null);
@@ -587,6 +590,20 @@ export default function Home() {
   const roleSavePending = useRef(false);
   const [adminEditingListener, setAdminEditingListener] =
     useState<ListenerRecord | null>(null);
+  const publicForm = !adminEntry && activeSection === 'form';
+  const protectedAudienceLoaded = useRef(false);
+  protectedAudienceLoaded.current =
+    Boolean(adminViewer) || listenerScope === 'staff';
+
+  function clearLoadedAudience() {
+    setListeners([]);
+    setListenerScope('anonymous');
+    setRoleMembers(defaultRoleMembers);
+    setAdminEditingListener(null);
+    setDeviceGroup('');
+    setDeviceListenerId('');
+    setDeviceBindingVerified(false);
+  }
 
   useEffect(() => {
     const isAdminPath = window.location.pathname.startsWith('/admin');
@@ -616,29 +633,23 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!window.location.pathname.startsWith('/admin')) {
+    if (!routeReady) return;
+    if (publicForm) {
+      if (protectedAudienceLoaded.current) clearLoadedAudience();
       setAdminViewer(null);
       setAdminSessionChecked(true);
       return;
     }
     const controller = new AbortController();
+    setAdminSessionChecked(false);
     void (async () => {
       try {
-        const response = await fetch('/api/admin/session', {
-          cache: 'no-store',
-          signal: controller.signal,
-        });
-        const result = (await response.json()) as {
+        const result = await loadJson<{
           authenticated?: boolean;
           viewer?: AdminViewer;
           error?: string;
-        };
-        if (response.status === 401) {
-          setAdminViewer(null);
-          setAdminSessionError('');
-          return;
-        }
-        if (!response.ok || !result.authenticated || !result.viewer) {
+        }>('/api/admin/session', { signal: controller.signal });
+        if (!result.authenticated || !result.viewer) {
           throw new Error(
             result.error || 'Bosh admin sessiyasi tasdiqlanmadi.',
           );
@@ -647,6 +658,7 @@ export default function Home() {
         setAdminSessionError('');
       } catch (error) {
         if (controller.signal.aborted) return;
+        if (protectedAudienceLoaded.current) clearLoadedAudience();
         setAdminViewer(null);
         setAdminSessionError(
           error instanceof Error
@@ -658,7 +670,7 @@ export default function Home() {
       }
     })();
     return () => controller.abort();
-  }, []);
+  }, [publicForm, routeReady, reloadVersion]);
 
   useEffect(() => {
     if (!routeReady || !adminSessionChecked) return;
@@ -668,25 +680,40 @@ export default function Home() {
     }
 
     const controller = new AbortController();
+    setServerLoading(true);
     void (async () => {
       try {
-        const [response, deviceResponse] = await Promise.all([
-          fetch('/api/state', {
-            headers: listenerAudienceHeaders(adminEntry),
-            cache: 'no-store',
-            signal: controller.signal,
-          }),
-          fetch('/api/device/session', {
-            cache: 'no-store',
-            signal: controller.signal,
-          }),
-        ]);
-        if (deviceResponse.ok && !adminViewer) {
-          const deviceResult = (await deviceResponse.json()) as {
-            bound?: boolean;
-            listenerId?: string;
-            group?: string;
-          };
+        // Admin rosters do not depend on a listener's old device cookie.
+        const deviceRequest = adminViewer
+          ? Promise.resolve(null)
+          : loadJson<{ bound?: boolean; listenerId?: string; group?: string }>(
+              '/api/device/session',
+              { signal: controller.signal },
+            ).catch(() => null);
+        const result = await loadListenerPages<{
+          listeners: ListenerRecord[];
+          roles?: RoleMember[];
+          telegramGroupUrl?: string;
+          sources?: ListenerSources;
+          scope?: { kind: string; canViewAll: boolean };
+        }>('/api/state', {
+          headers: publicForm ? listenerAudienceHeaders(false) : {},
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
+        if (
+          adminViewer?.permissions.includes('Tinglovchilar:Ko‘rish') &&
+          !result.scope?.canViewAll
+        ) {
+          clearLoadedAudience();
+          setAdminViewer(null);
+          throw new Error('Bosh admin sessiyasi tugadi. Qayta kiring.');
+        }
+        setListeners(result.listeners);
+        setListenerScope(result.scope?.kind || 'anonymous');
+        const deviceResult = await deviceRequest;
+        if (controller.signal.aborted) return;
+        if (deviceResult && !adminViewer) {
           if (
             deviceResult.bound &&
             deviceResult.listenerId &&
@@ -701,17 +728,6 @@ export default function Home() {
             setDeviceBindingVerified(false);
           }
         }
-        const result = (await response.json()) as {
-          error?: string;
-          listeners?: ListenerRecord[];
-          roles?: RoleMember[];
-          telegramGroupUrl?: string;
-          sources?: ListenerSources;
-        };
-        if (!response.ok) {
-          throw new Error(result.error || 'Ma’lumotlarni yuklab bo‘lmadi.');
-        }
-        setListeners(Array.isArray(result.listeners) ? result.listeners : []);
         if (result.telegramGroupUrl) {
           setTelegramGroupUrl(result.telegramGroupUrl);
         }
@@ -729,7 +745,11 @@ export default function Home() {
               : districtsByRegion,
           });
         }
-        setServerError('');
+        setServerError(
+          !adminViewer && !deviceResult
+            ? 'Qurilma guruhini tekshirib bo‘lmadi. «Yangilash»ni bosib qayta urinib ko‘ring.'
+            : '',
+        );
       } catch (error) {
         if (controller.signal.aborted) return;
         setServerError(
@@ -743,7 +763,14 @@ export default function Home() {
     })();
 
     return () => controller.abort();
-  }, [adminEntry, adminSessionChecked, adminViewer, routeReady]);
+  }, [
+    adminEntry,
+    adminSessionChecked,
+    adminViewer,
+    routeReady,
+    publicForm,
+    reloadVersion,
+  ]);
 
   function openSection(section: SectionId) {
     const permissionBySection: Partial<Record<SectionId, string>> = {
@@ -769,6 +796,10 @@ export default function Home() {
     setActiveSection(section);
     setMobileMenuOpen(false);
     const url = new URL(window.location.href);
+    if (section === 'form' && adminViewer && !publicForm) {
+      setAdminEntry(true);
+      url.pathname = '/admin';
+    }
     url.searchParams.set('section', section);
     window.history.replaceState({}, '', url);
   }
@@ -853,11 +884,13 @@ export default function Home() {
       try {
         const response = await fetch('/api/admin/logout', { method: 'POST' });
         if (!response.ok) throw new Error();
+        clearLoadedAudience();
         setAdminViewer(null);
         setAdminSessionError('');
         setAdminSessionChecked(true);
         setActiveSection('form');
         setMobileMenuOpen(false);
+        window.location.href = '/?section=form';
       } catch {
         setServerError(
           'Boshqaruv sessiyasidan chiqib bo‘lmadi. Internetni tekshiring.',
@@ -867,7 +900,7 @@ export default function Home() {
   }
 
   const can = (permission: string) =>
-    Boolean(adminEntry && adminViewer?.permissions.includes(permission));
+    Boolean(!publicForm && adminViewer?.permissions.includes(permission));
   const canSelectAnyGroup = can('Tinglovchilar:Kiritish');
   const canViewAnyGroup = can('Tinglovchilar:Ko‘rish');
   const profileName = adminViewer?.name ?? 'Tinglovchi';
@@ -1081,6 +1114,10 @@ export default function Home() {
           {activeSection === 'listeners' && (
             <ListenersPanel
               rows={listeners}
+              loading={serverLoading || !adminSessionChecked}
+              loadError={serverError}
+              scope={listenerScope}
+              onRefresh={() => setReloadVersion((version) => version + 1)}
               groups={listenerSources.groups}
               canCreate={can('Tinglovchilar:Kiritish')}
               canEdit={can('Tinglovchilar:Tahrirlash')}
@@ -1104,10 +1141,13 @@ export default function Home() {
           )}
           {activeSection === 'form' && (
             <ListenerForm
+              key={publicForm ? 'public-form' : 'admin-form'}
               isAdminForm={adminEntry}
               canEdit={can('Tinglovchilar:Tahrirlash')}
               canDelete={can('Tinglovchilar:O‘chirish')}
-              rows={listeners}
+              rows={publicForm && listenerScope === 'staff' ? [] : listeners}
+              rowsLoading={serverLoading}
+              rowsError={serverError}
               telegramGroupUrl={telegramGroupUrl}
               lockedGroup={deviceBindingVerified ? deviceGroup : ''}
               ownerListenerId={deviceListenerId}
@@ -1220,6 +1260,10 @@ export default function Home() {
 
 function ListenersPanel({
   rows,
+  loading,
+  loadError,
+  scope,
+  onRefresh,
   groups,
   canCreate,
   canEdit,
@@ -1233,6 +1277,10 @@ function ListenersPanel({
   onTelegramGroupUrlChange,
 }: {
   rows: ListenerRecord[];
+  loading: boolean;
+  loadError: string;
+  scope: string;
+  onRefresh: () => void;
   groups: string[];
   canCreate: boolean;
   canEdit: boolean;
@@ -1428,6 +1476,28 @@ function ListenersPanel({
   return (
     <section className="ting-page">
       <FormShareBar />
+      <output className="notice" aria-live="polite">
+        <span>
+          {loading
+            ? 'Tinglovchilar yuklanmoqda…'
+            : loadError
+              ? 'Yuklash yakunlanmadi. Avvalgi ro‘yxat saqlab turildi.'
+              : scope === 'anonymous'
+                ? 'To‘liq ro‘yxat bosh admin kirishidan keyin ko‘rinadi. Tinglovchi esa o‘z guruhini ko‘radi.'
+                : `${rows.length} nafar tinglovchi yuklandi.`}
+        </span>{' '}
+        <button type="button" disabled={loading} onClick={onRefresh}>
+          {loading ? 'Yangilanmoqda…' : '↻ Yangilash'}
+        </button>
+        {!loading && scope === 'anonymous' && (
+          <>
+            {' '}
+            <Link href="/admin?section=listeners">
+              Bosh admin sifatida kirish →
+            </Link>
+          </>
+        )}
+      </output>
       {copied && <output className="notice">✓ {copied} nusxalandi</output>}
       {actionError && (
         <div className="notice error" role="alert">
@@ -1798,13 +1868,22 @@ function ListenersPanel({
               </tbody>
             </table>
           </div>
-          {!filteredRows.length && (
+          {!filteredRows.length && !loading && !loadError && (
             <div className="listener-empty">
               <span>⌕</span>
-              <h4>Tinglovchi topilmadi</h4>
+              <h4>
+                {scope === 'anonymous'
+                  ? 'Ro‘yxatni ko‘rish uchun kiring'
+                  : rows.length
+                    ? 'Filtrga mos tinglovchi topilmadi'
+                    : 'Bu ro‘yxatda hozircha tinglovchi yo‘q'}
+              </h4>
               <p>
-                Yangi tinglovchini ro‘yxatdan o‘tish formasi orqali bittadan
-                kiriting.
+                {scope === 'anonymous'
+                  ? 'Barcha tinglovchilar bosh admin hisobida, shaxsiy guruh esa ro‘yxatdan o‘tgan qurilmada ochiladi.'
+                  : rows.length
+                    ? 'Yil, oy yoki boshqa filtrlarni o‘zgartiring.'
+                    : 'Yangi ma’lumot kiritilgach, «Yangilash»ni bosing.'}
               </p>
             </div>
           )}
@@ -1879,6 +1958,8 @@ function ListenerForm({
   canEdit,
   canDelete,
   rows,
+  rowsLoading = false,
+  rowsError = '',
   telegramGroupUrl,
   lockedGroup,
   ownerListenerId,
@@ -1897,6 +1978,8 @@ function ListenerForm({
   canEdit: boolean;
   canDelete: boolean;
   rows: ListenerRecord[];
+  rowsLoading?: boolean;
+  rowsError?: string;
   telegramGroupUrl: string;
   lockedGroup: string;
   ownerListenerId: string;
@@ -1998,7 +2081,9 @@ function ListenerForm({
     useState(ownerListenerId);
   // Head admins arrive to the cohort browser first. Data entry is an explicit
   // action, so the protected form never looks like a required registration.
-  const [cardsOnly, setCardsOnly] = useState(isAdminForm);
+  const [cardsOnly, setCardsOnly] = useState(
+    isAdminForm && !initialEditingRecord,
+  );
   const [photoPreview, setPhotoPreview] = useState(
     initialEditingRecord?.photo || '',
   );
@@ -2010,6 +2095,33 @@ function ListenerForm({
     null,
   );
   const [deletingRecordId, setDeletingRecordId] = useState('');
+  const initialAdminBrowseShown = useRef(false);
+  const previewRequest = useRef<AbortController | null>(null);
+
+  useEffect(() => () => previewRequest.current?.abort(), []);
+
+  useEffect(() => {
+    if (
+      !isAdminForm ||
+      !canViewAnyGroup ||
+      rowsLoading ||
+      rowsError ||
+      initialEditingRecord ||
+      initialAdminBrowseShown.current
+    )
+      return;
+    initialAdminBrowseShown.current = true;
+    setPreviewRows(rows);
+    setPreviewCohort({ group: '', year: '', month: '', category: '' });
+    setGroupPreviewOpen(true);
+  }, [
+    isAdminForm,
+    canViewAnyGroup,
+    rowsLoading,
+    rowsError,
+    initialEditingRecord,
+    rows,
+  ]);
 
   const matchedListener = useMemo(
     () =>
@@ -2145,6 +2257,9 @@ function ListenerForm({
   }
 
   async function loadGroupPreview(record?: ListenerRecord) {
+    previewRequest.current?.abort();
+    const controller = new AbortController();
+    previewRequest.current = controller;
     const previewGroup =
       record?.group ??
       (canViewAnyGroup
@@ -2158,9 +2273,21 @@ function ListenerForm({
         : selectedYear || previewStartDate.slice(0, 4));
     setLookingUpGroup(true);
     try {
-      const response = await fetch('/api/listeners/lookup', {
+      const result = await loadListenerPages<{
+        found?: boolean;
+        group?: string;
+        cohort?: {
+          group: string;
+          year: string;
+          month: string;
+          category?: string;
+        };
+        listeners: ListenerRecord[];
+        ownerListenerId?: string;
+      }>('/api/listeners/lookup', {
         method: 'POST',
         cache: 'no-store',
+        signal: controller.signal,
         headers: {
           'content-type': 'application/json',
           ...listenerAudienceHeaders(isAdminForm),
@@ -2182,20 +2309,8 @@ function ListenerForm({
             : {},
         ),
       });
-      const result = (await response.json()) as {
-        found?: boolean;
-        group?: string;
-        cohort?: {
-          group: string;
-          year: string;
-          month: string;
-          category?: string;
-        };
-        listeners?: ListenerRecord[];
-        ownerListenerId?: string;
-        error?: string;
-      };
-      if (!response.ok) throw new Error(result.error || 'Guruh aniqlanmadi.');
+      if (controller.signal.aborted || previewRequest.current !== controller)
+        return false;
       if (!result.found || !result.cohort) {
         throw new Error('Shu qurilma uchun saqlangan qabul yozuvi topilmadi.');
       }
@@ -2222,6 +2337,8 @@ function ListenerForm({
       setLookupError('');
       return true;
     } catch (lookupError) {
+      if (controller.signal.aborted || previewRequest.current !== controller)
+        return false;
       // Keep the last confirmed roster visible during a failed refresh.
       setLookupError(
         lookupError instanceof Error
@@ -2230,7 +2347,7 @@ function ListenerForm({
       );
       return false;
     } finally {
-      setLookingUpGroup(false);
+      if (previewRequest.current === controller) setLookingUpGroup(false);
     }
   }
 
@@ -2575,9 +2692,7 @@ function ListenerForm({
               <button
                 type="button"
                 aria-label="Yopish"
-                onClick={
-                  editingRecord || !cardsOnly ? cancelEditing : onCancel
-                }
+                onClick={editingRecord || !cardsOnly ? cancelEditing : onCancel}
               >
                 ×
               </button>
@@ -2791,10 +2906,14 @@ function ListenerForm({
           {isAdminForm && cardsOnly && !groupPreviewOpen && (
             <section className="admin-form-ready" aria-live="polite">
               <span>KO‘RISH REJIMI</span>
-              <b>Avval yil, oy, kategoriya va guruhni tanlang.</b>
+              <b>
+                {rowsLoading
+                  ? 'Tinglovchilar yuklanmoqda…'
+                  : 'Barcha yillar va guruhlarni ko‘rishingiz mumkin.'}
+              </b>
               <small>
-                Keyin «Ko‘rish»ni bosing. Yangi ma’lumot kiritish faqat «＋
-                Kiritish» orqali ochiladi.
+                Filtrlar ixtiyoriy. «Ko‘rish» ro‘yxatni yangilaydi. Yangi
+                ma’lumot «＋ Kiritish» orqali ochiladi.
               </small>
             </section>
           )}

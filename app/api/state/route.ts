@@ -15,6 +15,11 @@ import {
 } from '@/lib/server-data';
 
 import { isListenerAudience } from '@/lib/listener-audience';
+import {
+  listenerPage,
+  listenerPageOffset,
+  listenerPageSize,
+} from '@/lib/listener-pagination';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,6 +49,11 @@ function telegramUrl(value: unknown) {
 }
 
 export async function GET(request: Request) {
+  const offset = listenerPageOffset(
+    new URL(request.url).searchParams.get('offset'),
+  );
+  if (offset === null)
+    return publicError('Sahifa raqami noto‘g‘ri yuborildi.', 400);
   try {
     const [member, device] = await Promise.all([
       isListenerAudience(request) ? null : authenticatedAdmin(request),
@@ -88,9 +98,9 @@ export async function GET(request: Request) {
         `SELECT ${listenerColumns}
          FROM listeners
          WHERE deleted_at IS NULL
-         ORDER BY created_at ASC
-         LIMIT 1000`,
-        [],
+         ORDER BY created_at ASC, id ASC
+         LIMIT $1 OFFSET $2`,
+        [listenerPageSize + 1, offset],
       );
       scope = {
         kind: 'staff',
@@ -120,9 +130,16 @@ export async function GET(request: Request) {
              AND training_year = $2
              AND COALESCE(TO_CHAR(start_date, 'MM'), '') = $3
              AND category = $4
-           ORDER BY created_at ASC
-           LIMIT 250`,
-          [group, year, month, String(owner.category || '')],
+           ORDER BY created_at ASC, id ASC
+           LIMIT $5 OFFSET $6`,
+          [
+            group,
+            year,
+            month,
+            String(owner.category || ''),
+            listenerPageSize + 1,
+            offset,
+          ],
         );
         scope = { kind: 'device', group, year, month, canViewAll: false };
       }
@@ -134,8 +151,9 @@ export async function GET(request: Request) {
       ? normalizeListenerSources(sourceValue)
       : defaultListenerSources();
 
+    const page = listenerPage(listenerRows as ListenerDbRow[], offset);
     return jsonResponse({
-      listeners: (listenerRows as ListenerDbRow[]).map((row) =>
+      listeners: page.rows.map((row) =>
         canViewAll || device?.listenerId === row.id
           ? listenerFromDb(row)
           : publicListenerFromDb(row),
@@ -146,6 +164,7 @@ export async function GET(request: Request) {
       ),
       sources,
       scope,
+      pagination: page.pagination,
     });
   } catch (error) {
     logServerError('[api/state] Unable to load persisted state', error);

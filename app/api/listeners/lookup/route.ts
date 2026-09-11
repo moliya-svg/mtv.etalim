@@ -1,6 +1,11 @@
 import { authenticatedAdmin, deviceBinding } from '@/lib/auth';
 import { isListenerAudience } from '@/lib/listener-audience';
 import {
+  listenerPage,
+  listenerPageOffset,
+  listenerPageSize,
+} from '@/lib/listener-pagination';
+import {
   getDatabase,
   hasPermission,
   jsonResponse,
@@ -21,6 +26,7 @@ type LookupInput = {
   month?: unknown;
   category?: unknown;
   startDate?: unknown;
+  offset?: unknown;
 };
 
 export async function POST(request: Request) {
@@ -45,6 +51,10 @@ export async function POST(request: Request) {
   } catch {
     return publicError('Qidiruv ma’lumotлари noto‘g‘ri yuborildi.', 400);
   }
+
+  const offset = listenerPageOffset(input?.offset);
+  if (offset === null)
+    return publicError('Sahifa raqami noto‘g‘ri yuborildi.', 400);
 
   try {
     const [member, device] = await Promise.all([
@@ -78,7 +88,12 @@ export async function POST(request: Request) {
             LIMIT 1
           `;
       const source = sourceRows[0];
-      if (!source) return jsonResponse({ found: false, listeners: [] });
+      if (!source)
+        return jsonResponse({
+          found: false,
+          listeners: [],
+          pagination: { nextOffset: null },
+        });
       if (device) ownerListenerId = String(source.id || '');
       category = String(source.category || '');
       group = String(source.group_name || '');
@@ -113,11 +128,12 @@ export async function POST(request: Request) {
         AND (${canViewAll && !year} OR training_year = ${year})
         AND (${canViewAll && !month} OR COALESCE(TO_CHAR(start_date, 'MM'), '') = ${month})
         AND (${canViewAll && !category} OR category = ${category})
-      ORDER BY created_at ASC
-      LIMIT ${canViewAll ? 1000 : 250}
+      ORDER BY created_at ASC, id ASC
+      LIMIT ${listenerPageSize + 1} OFFSET ${offset}
     `;
 
-    const listeners = (rows as ListenerDbRow[]).map((row) =>
+    const page = listenerPage(rows as ListenerDbRow[], offset);
+    const listeners = page.rows.map((row) =>
       canViewAll || ownerListenerId === row.id
         ? listenerFromDb(row)
         : publicListenerFromDb(row),
@@ -129,6 +145,7 @@ export async function POST(request: Request) {
       canViewAll,
       listeners,
       ownerListenerId,
+      pagination: page.pagination,
     });
     return response;
   } catch (error) {

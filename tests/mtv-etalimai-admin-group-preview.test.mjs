@@ -5,6 +5,7 @@ import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { formatAdminCohort } from '../lib/listener-preview.ts';
 import { isListenerAudience } from '../lib/listener-audience.ts';
+import * as pagination from '../lib/listener-pagination.ts';
 
 const group56 = 'Nomzod direktor (56-guruh)';
 const group57 = 'Nomzod direktor (57-guruh)';
@@ -94,8 +95,10 @@ function setup({
       allCategories,
       category,
       limit,
+      offset,
     ] = values;
-    assert.equal(limit, admin && audience !== 'listener' ? 1000 : 250);
+    assert.equal(limit, pagination.listenerPageSize + 1);
+    assert.match(query, /ORDER BY created_at ASC, id ASC/);
     assert.match(query, /deleted_at IS NULL/);
     return records
       .filter(
@@ -106,9 +109,10 @@ function setup({
           (allMonths || row.training_month === month) &&
           (allCategories || row.category === category),
       )
-      .slice(0, limit);
+      .slice(offset, offset + limit);
   };
   const mocks = {
+    '@/lib/listener-pagination': pagination,
     '@/lib/listener-audience': { isListenerAudience },
     '@/lib/auth': {
       authenticatedAdmin: async () =>
@@ -174,6 +178,7 @@ test('admin opens all groups without group, year, month or phone', async () => {
   assert.equal(status, 200);
   assert.equal(body.found, true);
   assert.equal(body.canViewAll, true);
+  assert.deepEqual(body.pagination, { nextOffset: null });
   assert.deepEqual(body.cohort, {
     group: '',
     year: '',
@@ -187,6 +192,76 @@ test('admin opens all groups without group, year, month or phone', async () => {
   assert.ok(body.listeners.every((row) => row.privateDetails));
   assert.equal(cookie, null);
 });
+
+test('admin pages through every listener beyond the former 1000-record ceiling', async () => {
+  const records = Array.from({ length: 1103 }, (_, index) => ({
+    ...fixtures[0],
+    id: `listener-${index}`,
+  }));
+  const app = setup({ admin: true, records });
+  const seen = [];
+  let offset = 0;
+  let pages = 0;
+  do {
+    const result = await app.lookup({ offset });
+    assert.equal(result.status, 200);
+    assert.ok(result.body.listeners.length <= pagination.listenerPageSize);
+    seen.push(...result.body.listeners.map((row) => row.id));
+    offset = result.body.pagination.nextOffset;
+    pages += 1;
+  } while (offset !== null);
+  assert.equal(pages, 5);
+  assert.deepEqual(
+    seen,
+    records.map((row) => row.id),
+  );
+});
+
+test('later public pages keep the exact saved cohort and mask peers', async () => {
+  const peers = Array.from({ length: 270 }, (_, index) => ({
+    ...fixtures[0],
+    id: `peer-${index}`,
+  }));
+  const app = setup({
+    admin: true,
+    audience: 'listener',
+    device: { listenerId: 'owner' },
+    records: [...fixtures, ...peers],
+  });
+  const first = await app.lookup({ group: group57, year: '2025' });
+  assert.equal(first.body.pagination.nextOffset, 250);
+  assert.equal(first.body.listeners[0].privateDetails, true);
+  const second = await app.lookup({
+    offset: 250,
+    group: group57,
+    year: '2025',
+  });
+  assert.equal(second.status, 200);
+  assert.equal(second.body.canViewAll, false);
+  assert.equal(second.body.listeners.length, 22);
+  assert.equal(second.body.pagination.nextOffset, null);
+  assert.equal(second.body.cohort.group, group56);
+  assert.ok(second.body.listeners.every((row) => !row.privateDetails));
+});
+
+for (const offset of [
+  -1,
+  1.5,
+  'oops',
+  '',
+  {},
+  true,
+  Number.MAX_SAFE_INTEGER + 1,
+]) {
+  test(
+    'lookup rejects invalid pagination offset ' + JSON.stringify(offset),
+    async () => {
+      const app = setup({ admin: true });
+      assert.equal((await app.lookup({ offset })).status, 400);
+      assert.equal(app.calls.length, 0);
+    },
+  );
+}
 for (const [name, filters, ids] of [
   ['group only', { group: group56 }, ['owner', 'peer', 'other-year']],
   ['year only', { year: '2025' }, ['other-year']],

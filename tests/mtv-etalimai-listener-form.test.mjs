@@ -6,6 +6,7 @@ import * as jsxRuntime from 'react/jsx-runtime';
 import ts from 'typescript';
 import { formatAdminCohort } from '../lib/listener-preview.ts';
 import { listenerAudienceHeaders } from '../lib/listener-audience.ts';
+import { loadListenerPages } from '../lib/listener-loading.ts';
 
 // Execute the real form with deterministic hooks and mocked network responses.
 // No production database writes, browser cookies or external personal data.
@@ -64,6 +65,10 @@ function setup(overrides = {}) {
     saves = [],
     deletes = [];
   let reply = () => responseFor([owner, peer]);
+  const request = async (url, options) => {
+    requests.push({ url, ...options, payload: JSON.parse(options.body) });
+    return reply();
+  };
   const props = {
     isAdminForm: false,
     canEdit: false,
@@ -132,6 +137,10 @@ function setup(overrides = {}) {
     'next/link': { default: 'a' },
     '@/lib/listener-preview': { formatAdminCohort },
     '@/lib/listener-audience': { listenerAudienceHeaders },
+    '@/lib/listener-loading': {
+      loadListenerPages: (url, options) =>
+        loadListenerPages(url, options, { fetcher: request }),
+    },
     '@/components/form-share-bar': { FormShareBar: () => null },
     '@/components/form-navigation': { FormNavigation: () => null },
     '@/components/google-admin-login': { GoogleAdminLogin: () => null },
@@ -140,13 +149,11 @@ function setup(overrides = {}) {
   runInNewContext(compiled, {
     exports,
     Error,
+    AbortController,
     File,
     FormData: TestFormData,
     window: { requestAnimationFrame: () => {}, confirm: () => true },
-    fetch: async (url, options) => {
-      requests.push({ url, ...options, payload: JSON.parse(options.body) });
-      return reply();
-    },
+    fetch: request,
     require: (id) => {
       assert.ok(dependencies[id], id);
       return dependencies[id];
@@ -295,16 +302,18 @@ test('ordinary form has no browse filters; admin has year/month above category/g
   assert.ok(admin.find((node) => node.props?.href === '/?section=form').length);
 });
 
-test('admin form starts in browse mode and makes year selection explicit', async () => {
+test('admin form immediately shows all loaded rows and makes year selection explicit', async () => {
   const admin = setup({
     isAdminForm: true,
     canViewAnyGroup: true,
     canSelectAnyGroup: true,
     canEdit: true,
+    rows: [owner, peer],
   });
   assert.equal(cardsHidden(admin), true);
-  assert.ok(textOf(admin.tree).includes('KO‘RISH REJIMI'));
-  assert.ok(textOf(admin.tree).includes('Yangi ma’lumot kiritish faqat'));
+  assert.ok(textOf(admin.tree).includes('Barcha guruhlar'));
+  assert.ok(textOf(admin.tree).includes(owner.name));
+  assert.equal(admin.requests.length, 0);
 
   const currentYear = String(new Date().getFullYear());
   const filterYear = filters(admin).find(
@@ -330,6 +339,38 @@ test('admin form starts in browse mode and makes year selection explicit', async
     )[0].props.value,
     String(Number(currentYear) - 1),
   );
+});
+
+test('opening an existing listener from the admin table displays its editable fields', () => {
+  const admin = setup({
+    isAdminForm: true,
+    canViewAnyGroup: true,
+    canSelectAnyGroup: true,
+    canEdit: true,
+    rows: [owner],
+    initialEditingRecord: owner,
+  });
+  assert.equal(cardsHidden(admin), false);
+  assert.equal(
+    admin.find((node) => node.props?.name === 'surname')[0].props.defaultValue,
+    owner.surname,
+  );
+});
+
+test('failed initial admin load never presents an empty successful cohort', () => {
+  const admin = setup({
+    isAdminForm: true,
+    canViewAnyGroup: true,
+    canSelectAnyGroup: true,
+    rows: [],
+    rowsError: 'Database unavailable',
+  });
+  assert.equal(
+    admin.find((node) => node.props?.className === 'cards-only-success').length,
+    0,
+  );
+  admin.update({ rows: [owner, peer], rowsError: '' });
+  assert.ok(textOf(admin.tree).includes(owner.name));
 });
 
 test('admin category narrows groups and all four filters reach the server', async () => {

@@ -69,6 +69,22 @@ function harness(clipboardWorks = true) {
   return {
     copied,
     nodes: () => descendants(tree),
+    async copy(kind, linkOnly = false) {
+      const card = descendants(tree).find(
+        (node) => node.props?.className === 'mtv-share-item ' + kind,
+      );
+      assert.ok(card, 'Missing share card: ' + kind);
+      const label = linkOnly
+        ? 'Havolani nusxalash'
+        : 'Telegram uchun nusxalash';
+      const button = descendants(card).find(
+        (node) => node.type === 'button' && node.props.children === label,
+      );
+      assert.ok(button, 'Missing copy action: ' + label);
+      button.props.onClick();
+      await new Promise((resolve) => setImmediate(resolve));
+      render();
+    },
     async copyFirst() {
       descendants(tree)
         .find(
@@ -135,3 +151,61 @@ test('denied clipboard offers selectable text instead of false success', async (
     formShareText('listener'),
   );
 });
+
+test('form URLs remain canonical and keep ordinary registration separate from admin', () => {
+  assert.equal(formUrls.listener, 'https://mtv.etalimai.uz/?section=form');
+  assert.equal(formUrls.admin, 'https://mtv.etalimai.uz/admin?section=form');
+  const adminText = formShareText('admin');
+  assert.match(adminText, /Google orqali/);
+  assert.ok(adminText.includes(formUrls.admin));
+  assert.ok(!adminText.includes(formUrls.listener));
+});
+
+for (const kind of ['listener', 'admin']) {
+  for (const linkOnly of [true, false]) {
+    const title = `${kind} ${linkOnly ? 'raw URL' : 'Telegram message'}`;
+    const expected = linkOnly ? formUrls[kind] : formShareText(kind);
+    test(`${title} copy uses exactly its own URL and matching success feedback`, async () => {
+      const app = harness();
+      await app.copy(kind, linkOnly);
+      assert.equal(app.copied[0], expected);
+      assert.ok(
+        app
+          .nodes()
+          .some(
+            (node) =>
+              node.type === 'button' &&
+              node.props.children ===
+                (linkOnly ? '✓ Havola nusxalandi' : '✓ Matn nusxalandi'),
+          ),
+      );
+      const feedback = app
+        .nodes()
+        .find((node) => node.props?.className === 'mtv-share-feedback');
+      assert.ok(feedback);
+      assert.match(
+        feedback.props.children,
+        linkOnly ? /Forma havolasi nusxalandi/ : /Telegramga joylashtiring/,
+      );
+      if (linkOnly) assert.ok(!app.copied[0].includes('\n'));
+      else assert.ok(app.copied[0].includes('\n\n'));
+    });
+
+    test(`${title} remains manually copyable when clipboard permission is denied`, async () => {
+      const app = harness(false);
+      await app.copy(kind, linkOnly);
+      assert.equal(app.copied.length, 0);
+      assert.equal(
+        app.nodes().find((node) => node.type === 'textarea').props.value,
+        expected,
+      );
+      assert.equal(
+        app
+          .nodes()
+          .filter((node) => node.props?.className === 'mtv-share-feedback')
+          .length,
+        0,
+      );
+    });
+  }
+}

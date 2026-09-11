@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { loadJson } from '@/lib/listener-loading';
 
 type GoogleIdentity = {
   initialize: (options: {
@@ -72,28 +73,29 @@ export function GoogleAdminLogin({
     'Google orqali kirish tekshirilmoqda…',
   );
   const [error, setError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const [retry, setRetry] = useState(false);
   useEffect(() => {
     onSuccess.current = onAuthenticated;
   }, [onAuthenticated]);
 
   useEffect(() => {
     const controller = new AbortController();
+    setRetry(false);
+    setError(false);
+    setMessage('Google orqali kirish tekshirilmoqda…');
+    button.current?.replaceChildren();
     void (async () => {
       try {
-        const response = await fetch('/api/admin/google', {
-          cache: 'no-store',
-          signal: controller.signal,
-        });
-        const config = (await response.json()) as {
+        const config = await loadJson<{
           enabled?: boolean;
           clientId?: string;
           nonce?: string;
           error?: string;
-        };
-        if (!response.ok)
-          throw new Error(config.error || 'Google kirishi yuklanmadi.');
+        }>('/api/admin/google', { signal: controller.signal });
         if (!config.enabled || !config.clientId || !config.nonce) {
           setMessage('Google orqali parolsiz kirish hali ulanmagan.');
+          setRetry(true);
           return;
         }
         const google = await loadGoogleIdentity();
@@ -109,18 +111,17 @@ export function GoogleAdminLogin({
             setMessage('Google akkaunti tasdiqlanmoqda…');
             void (async () => {
               try {
-                const login = await fetch('/api/admin/google', {
+                const result = await loadJson<{
+                  authenticated?: boolean;
+                  viewer?: Viewer;
+                  error?: string;
+                }>('/api/admin/google', {
                   method: 'POST',
                   signal: controller.signal,
                   headers: { 'content-type': 'application/json' },
                   body: JSON.stringify({ credential }),
                 });
-                const result = (await login.json()) as {
-                  authenticated?: boolean;
-                  viewer?: Viewer;
-                  error?: string;
-                };
-                if (!login.ok || !result.authenticated || !result.viewer) {
+                if (!result.authenticated || !result.viewer) {
                   throw new Error(
                     result.error || 'Google akkaunti tasdiqlanmadi.',
                   );
@@ -129,6 +130,7 @@ export function GoogleAdminLogin({
               } catch (failure) {
                 if (controller.signal.aborted) return;
                 setError(true);
+                setRetry(true);
                 setMessage(
                   failure instanceof Error
                     ? failure.message
@@ -153,6 +155,7 @@ export function GoogleAdminLogin({
       } catch (failure) {
         if (controller.signal.aborted) return;
         setError(true);
+        setRetry(true);
         setMessage(
           failure instanceof Error
             ? failure.message
@@ -161,7 +164,7 @@ export function GoogleAdminLogin({
       }
     })();
     return () => controller.abort();
-  }, []);
+  }, [attempt]);
 
   return (
     <div className="google-admin-login">
@@ -172,6 +175,11 @@ export function GoogleAdminLogin({
       >
         {message}
       </p>
+      {retry && (
+        <button type="button" onClick={() => setAttempt((value) => value + 1)}>
+          Google kirishini qayta tekshirish
+        </button>
+      )}
     </div>
   );
 }

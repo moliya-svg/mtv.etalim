@@ -42,7 +42,12 @@ export function proxy(request: NextRequest) {
     'Permissions-Policy',
     'camera=(), geolocation=(), microphone=()',
   );
-  response.headers.set('Referrer-Policy', 'no-referrer');
+  response.headers.set(
+    'Referrer-Policy',
+    request.nextUrl.pathname.startsWith('/admin')
+      ? 'strict-origin-when-cross-origin'
+      : 'no-referrer',
+  );
   response.headers.set('X-Content-Type-Options', 'nosniff');
   response.headers.set('X-Frame-Options', 'DENY');
   if (!isLocal) {

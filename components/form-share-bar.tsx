@@ -8,11 +8,11 @@ export function FormShareBar() {
   const [copied, setCopied] = useState('');
   const [manualCopy, setManualCopy] = useState('');
   const [qrOpen, setQrOpen] = useState(false);
-  async function copy(kind: 'listener' | 'admin') {
-    const text = formShareText(kind);
+  async function copy(kind: 'listener' | 'admin', linkOnly = false) {
+    const text = linkOnly ? formUrls[kind] : formShareText(kind);
     try {
       await navigator.clipboard.writeText(text);
-      setCopied(kind);
+      setCopied(kind + (linkOnly ? '-link' : '-text'));
       setManualCopy('');
     } catch {
       setCopied('');
@@ -46,11 +46,18 @@ export function FormShareBar() {
                   ? 'Ro‘yxatdan o‘tish va o‘z guruhini ko‘rish'
                   : 'Faqat ruxsat berilgan administratorlar uchun'}
               </small>
-              <button type="button" onClick={() => void copy(kind)}>
-                {copied === kind
-                  ? '✓ Matn nusxalandi'
-                  : 'Telegram uchun nusxalash'}
-              </button>
+              <div className="mtv-share-copy-actions">
+                <button type="button" onClick={() => void copy(kind, true)}>
+                  {copied === kind + '-link'
+                    ? '✓ Havola nusxalandi'
+                    : 'Havolani nusxalash'}
+                </button>
+                <button type="button" onClick={() => void copy(kind)}>
+                  {copied === kind + '-text'
+                    ? '✓ Matn nusxalandi'
+                    : 'Telegram uchun nusxalash'}
+                </button>
+              </div>
             </div>
           </article>
         ))}
@@ -76,8 +83,9 @@ export function FormShareBar() {
       </div>
       {copied && (
         <output className="mtv-share-feedback">
-          Telegramga matnni joylashtiring — sarlavha, izoh va havola birga
-          nusxalandi.
+          {copied.endsWith('-link')
+            ? 'Forma havolasi nusxalandi — kerakli joyga joylashtiring.'
+            : 'Telegramga joylashtiring — sarlavha, yo‘riqnoma va forma havolasi nusxalandi.'}
         </output>
       )}
       {manualCopy && (

@@ -43,8 +43,14 @@ test('ordinary and head-admin forms are separate menu links on every route', () 
       assert.equal(admin.type, 'a');
       assert.equal(text(ordinary), 'TINGLOVCHI FORMASI');
       assert.equal(text(admin), 'BOSH ADMIN FORMASI');
-      assert.equal(ordinary.props.href, 'https://mtv.etalimai.uz/?section=form');
-      assert.equal(admin.props.href, 'https://mtv.etalimai.uz/admin?section=form');
+      assert.equal(
+        ordinary.props.href,
+        'https://mtv.etalimai.uz/?section=form',
+      );
+      assert.equal(
+        admin.props.href,
+        'https://mtv.etalimai.uz/admin?section=form',
+      );
       // Do not reuse the current route's privilege state with a shallow switch.
       assert.equal(ordinary.props.onClick, undefined);
       assert.equal(admin.props.onClick, undefined);
@@ -79,13 +85,19 @@ test('the existing protected admin route and distinct form heading are preserved
     'utf8',
   );
   assert.ok(page.includes('if (adminEntry && !adminViewer)'));
-  assert.ok(page.includes("fetch('/api/admin/session'"));
+  assert.ok(page.includes("}>('/api/admin/session'"));
   assert.ok(page.includes('adminEntry={adminEntry}'));
   assert.ok(page.includes("formActive={activeSection === 'form'}"));
   assert.ok(page.includes("? 'Bosh admin formasi'"));
   assert.ok(page.includes('isAdminForm={adminEntry}'));
 });
 test('only the head-admin form renders the header close control', () => {
-  const page = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');
-  assert.match(page, /\{isAdminForm && \(\s*<button\s+type="button"\s+aria-label="Yopish"/);
+  const page = readFileSync(
+    new URL('../app/page.tsx', import.meta.url),
+    'utf8',
+  );
+  assert.match(
+    page,
+    /\{isAdminForm && \(\s*<button\s+type="button"\s+aria-label="Yopish"/,
+  );
 });

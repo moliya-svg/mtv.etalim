@@ -73,6 +73,11 @@
 .mtv-share-qr {
   padding: 10px 14px;
 }
+.mtv-share-copy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .mtv-share-qr > button {
   display: flex;
   align-items: center;
